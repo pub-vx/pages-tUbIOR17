@@ -1,0 +1,1756 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>내부 CS 자동화 — AI 업무 어시스턴트 프로토타입</title>
+<style>
+  :root {
+    --navy: #1B2E4B; --navy-light: #243B55;
+    --blue: #3A7BD5; --blue-light: #EEF4FD;
+    --teal: #00B4A0; --teal-light: #E8FAF8;
+    --white: #FFFFFF; --off-white: #F4F7FC;
+    --gray: #8A9BB0; --gray-light: #E8EDF5; --gray-mid: #6B7280;
+    --dark: #1A2332; --text: #374151;
+    --red: #EF4444; --red-light: #FEF2F2;
+    --orange: #F59E0B; --orange-light: #FFFBEA;
+    --green: #22C55E; --green-light: #F0FDF4;
+    --border: #E5E7EB;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system,'Segoe UI','Pretendard',Arial,sans-serif;
+    background: #F0F2F5; color: var(--text);
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ===== TOP BAR ===== */
+  .top-bar {
+    background: var(--navy); color: white;
+    padding: 0 20px; height: 50px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .top-bar-left { display: flex; align-items: center; gap: 12px; }
+  .top-bar-title { font-size: 14px; font-weight: 700; }
+  .top-bar-subtitle { font-size: 11px; color: var(--gray); }
+  .scenario-tabs { display: flex; gap: 6px; }
+  .scenario-tab {
+    padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1.5px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.55); transition: all 0.2s; background: transparent;
+  }
+  .scenario-tab.active { background: var(--teal); border-color: var(--teal); color: white; }
+  .scenario-tab:hover:not(.active) { border-color: rgba(255,255,255,0.5); color: white; }
+
+  /* ===== MAIN ===== */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ===== SIDEBAR ===== */
+  .sidebar {
+    width: 220px; background: var(--navy-light); flex-shrink: 0;
+    overflow-y: auto; border-right: 1px solid rgba(255,255,255,0.06);
+  }
+  .sidebar-section { padding: 14px 10px 6px; }
+  .sidebar-label { font-size: 10.5px; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: .08em; padding: 0 8px 7px; }
+  .sidebar-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 5px; cursor: pointer;
+    font-size: 12.5px; color: rgba(255,255,255,0.5); transition: all .15s; margin-bottom: 1px;
+  }
+  .sidebar-item:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,.8); }
+  .sidebar-item.active { background: rgba(255,255,255,.12); color: white; font-weight: 600; }
+  .sidebar-item .icon { font-size: 14px; width: 18px; text-align: center; }
+  .unread { margin-left: auto; background: var(--red); color: white; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; }
+
+  /* ===== CHAT AREA ===== */
+  .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: white; }
+  .chat-header {
+    padding: 10px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0; background: white;
+  }
+  .bot-avatar {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--navy), var(--blue));
+    display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0;
+  }
+  .chat-header-info h3 { font-size: 14px; font-weight: 700; color: var(--dark); }
+  .chat-header-info p { font-size: 11.5px; color: var(--green); display: flex; align-items: center; gap: 4px; }
+  .online-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; }
+  .header-note { margin-left: auto; font-size: 11px; color: var(--gray); background: var(--off-white); padding: 3px 10px; border-radius: 20px; }
+
+  .chat-messages { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 2px; scroll-behavior: smooth; }
+
+  /* ===== MESSAGES ===== */
+  .msg-group { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 10px; }
+  .msg-group.user { flex-direction: row-reverse; }
+  .msg-av {
+    width: 30px; height: 30px; border-radius: 7px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700;
+  }
+  .msg-av.bot { background: linear-gradient(135deg,var(--navy),var(--blue)); color: white; }
+  .msg-av.user { background: linear-gradient(135deg,var(--teal),var(--blue)); color: white; font-size: 11px; }
+  .msg-col { max-width: 75%; display: flex; flex-direction: column; gap: 3px; }
+  .msg-group.user .msg-col { align-items: flex-end; }
+  .msg-meta { font-size: 11px; font-weight: 600; color: var(--gray); margin-bottom: 1px; }
+  .msg-group.user .msg-meta { text-align: right; }
+  .bubble {
+    padding: 9px 13px; border-radius: 12px;
+    font-size: 13.5px; line-height: 1.55; word-break: keep-all;
+  }
+  .bubble.bot { background: var(--off-white); border: 1px solid var(--border); border-radius: 2px 12px 12px 12px; color: var(--dark); }
+  .bubble.user { background: var(--blue); color: white; border-radius: 12px 2px 12px 12px; }
+  .bubble.notif { background: var(--orange-light); border: 1.5px solid var(--orange); border-radius: 8px; color: var(--dark); font-size: 13px; }
+  .bubble.success { background: var(--green-light); border: 1.5px solid var(--green); border-radius: 8px; color: var(--dark); font-size: 13px; }
+  .bubble.confirm { background: var(--teal-light); border: 1.5px solid var(--teal); border-radius: 8px; color: var(--dark); font-size: 13px; }
+
+  .action-btns { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+  .abtn {
+    padding: 7px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; border: none; transition: all .2s; display: flex; align-items: center; gap: 5px;
+  }
+  .abtn.primary { background: var(--blue); color: white; }
+  .abtn.primary:hover { background: #2d68c4; transform: translateY(-1px); }
+  .abtn.teal { background: var(--teal); color: white; }
+  .abtn.teal:hover { background: #009688; transform: translateY(-1px); }
+  .abtn.outline { background: white; color: var(--blue); border: 1.5px solid var(--blue); }
+  .abtn.outline:hover { background: var(--blue-light); }
+  .abtn.ghost { background: transparent; color: var(--gray); border: 1.5px solid var(--border); }
+  .abtn.ghost:hover { border-color: var(--gray); color: var(--dark); }
+  .quick-replies { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .qr {
+    padding: 4px 11px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    cursor: pointer; border: 1.5px solid var(--blue); color: var(--blue);
+    background: white; transition: all .15s;
+  }
+  .qr:hover { background: var(--blue); color: white; }
+  .src { font-size: 11px; color: var(--blue); display: flex; align-items: center; gap: 3px; margin-top: 5px; cursor: pointer; }
+  .src:hover { text-decoration: underline; }
+  .step-list { display: flex; flex-direction: column; gap: 4px; margin: 7px 0; }
+  .step-row { display: flex; align-items: flex-start; gap: 7px; padding: 6px 9px; border-radius: 6px; background: white; border: 1px solid var(--border); }
+  .step-num { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: white; flex-shrink: 0; margin-top: 1px; }
+  .step-num.s-done { background: var(--green); }
+  .step-num.s-active { background: var(--teal); }
+  .step-num.s-pending { background: var(--gray); }
+  .step-t { font-size: 12.5px; font-weight: 600; color: var(--dark); }
+  .step-d { font-size: 11px; color: var(--gray); margin-top: 1px; }
+
+  /* ===== INLINE FORM CARD ===== */
+  .form-card {
+    background: white;
+    border: 2px solid var(--blue);
+    border-radius: 10px;
+    margin-top: 8px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 520px;
+    box-shadow: 0 4px 16px rgba(58,123,213,0.12);
+  }
+  .form-card.teal-theme { border-color: var(--teal); box-shadow: 0 4px 16px rgba(0,180,160,0.12); }
+
+  .form-card-header {
+    padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .form-card-header.blue-bg { background: linear-gradient(90deg, var(--navy) 0%, #2a4a7f 100%); }
+  .form-card-header.teal-bg { background: linear-gradient(90deg, #006b60 0%, var(--teal) 100%); }
+  .fch-left { display: flex; align-items: center; gap: 8px; }
+  .fch-title { font-size: 13px; font-weight: 700; color: white; }
+  .fch-type { font-size: 10.5px; padding: 2px 8px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; font-weight: 600; }
+  .fch-right { display: flex; align-items: center; gap: 8px; }
+  .form-progress-badge {
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+    background: rgba(255,255,255,0.15); color: white;
+  }
+  .form-progress-badge.all-done { background: var(--green); color: white; }
+
+  .form-fields { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+
+  .field-row { display: flex; flex-direction: column; gap: 4px; }
+  .field-label-row { display: flex; align-items: center; gap: 5px; }
+  .field-lbl { font-size: 12px; font-weight: 600; color: var(--dark); }
+  .field-req { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: #FEE2E2; color: var(--red); }
+  .field-opt { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 20px; background: var(--gray-light); color: var(--gray); }
+  .field-auto { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 20px; background: var(--teal-light); color: var(--teal); }
+  .field-input-wrap { position: relative; }
+  .field-input {
+    width: 100%; padding: 7px 11px;
+    border: 1.5px solid var(--border); border-radius: 7px;
+    font-size: 13px; color: var(--dark); background: var(--off-white);
+    transition: border-color .15s, background .15s;
+    font-family: inherit;
+  }
+  .field-input:focus { outline: none; border-color: var(--blue); background: white; }
+  .field-input.auto-filled { background: var(--teal-light); border-color: #86EFAC; color: #065f52; }
+  .field-input.user-filled { background: var(--green-light); border-color: #86EFAC; color: #166534; }
+  .field-input.needs-input { background: #FFF7ED; border-color: #FBB040; }
+  .field-input.active-question { background: #EFF6FF; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(58,123,213,0.12); }
+  .field-hint { font-size: 11px; color: var(--gray); margin-top: 2px; padding-left: 2px; }
+  .field-check { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 14px; }
+
+  .form-card-footer {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--off-white);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .form-status-text { font-size: 11.5px; color: var(--orange); font-weight: 600; }
+  .form-status-text.ready { color: var(--green); }
+  .submit-btn {
+    padding: 8px 18px; border-radius: 7px; font-size: 13px; font-weight: 700;
+    cursor: pointer; border: none; transition: all .2s; white-space: nowrap;
+  }
+  .submit-btn.disabled { background: var(--gray-light); color: var(--gray); cursor: not-allowed; }
+  .submit-btn.ready-blue { background: var(--blue); color: white; }
+  .submit-btn.ready-blue:hover { background: #2d68c4; transform: translateY(-1px); }
+  .submit-btn.ready-teal { background: var(--teal); color: white; }
+  .submit-btn.ready-teal:hover { background: #009688; transform: translateY(-1px); }
+
+  /* ===== CHAT INPUT ===== */
+  .chat-input-area {
+    padding: 10px 18px; border-top: 1px solid var(--border);
+    background: white; flex-shrink: 0;
+  }
+  .chat-input-hint { font-size: 11.5px; color: var(--gray); margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
+  .chat-input-hint .active-q { color: var(--blue); font-weight: 600; }
+  .chat-input-wrap {
+    display: flex; gap: 8px; align-items: center;
+    border: 1.5px solid var(--border); border-radius: 9px; padding: 7px 11px;
+    transition: border-color .15s; background: var(--off-white);
+  }
+  .chat-input-wrap:focus-within { border-color: var(--blue); background: white; }
+  .chat-input { flex: 1; border: none; background: transparent; font-size: 13.5px; outline: none; color: var(--dark); font-family: inherit; }
+  .chat-input::placeholder { color: var(--gray); }
+  .send-btn {
+    width: 32px; height: 32px; border-radius: 7px; background: var(--blue);
+    border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: background .15s;
+  }
+  .send-btn:hover { background: #2d68c4; }
+  .send-btn svg { width: 15px; height: 15px; fill: white; }
+
+  /* ===== RIGHT PANEL ===== */
+  .right-panel {
+    width: 280px; background: white;
+    border-left: 1px solid var(--border); flex-shrink: 0;
+    overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .panel-hdr { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 12.5px; font-weight: 700; color: var(--dark); }
+  .panel-sec { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .panel-sec h4 { font-size: 10.5px; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+  .status-row {
+    display: flex; align-items: center; gap: 7px; padding: 7px 9px;
+    border-radius: 7px; background: var(--off-white); margin-bottom: 5px; font-size: 12px;
+  }
+  .sdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .sdot.done { background: var(--green); }
+  .sdot.active { background: var(--blue); animation: pulse 1.5s infinite; }
+  .sdot.pending { background: var(--gray); }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.35} }
+  .st { flex: 1; }
+  .st-title { font-weight: 600; color: var(--dark); font-size: 12px; }
+  .st-sub { font-size: 10.5px; color: var(--gray); }
+  .prog-bar { height: 4px; background: var(--gray-light); border-radius: 2px; margin: 6px 0; }
+  .prog-fill { height: 100%; border-radius: 2px; background: var(--teal); transition: width .5s; }
+  .info-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+  .info-row .lbl { color: var(--gray); }
+  .info-row .val { font-weight: 600; color: var(--dark); }
+  .guide-btn {
+    padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600;
+    cursor: pointer; border: 1.5px solid var(--border); background: white;
+    color: var(--text); transition: all .15s; margin-bottom: 5px;
+    display: flex; align-items: center; gap: 7px; width: 100%;
+  }
+  .guide-btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-light); }
+
+  .hidden { display: none !important; }
+  .typing-bubble { padding: 9px 14px; background: var(--off-white); border: 1px solid var(--border); border-radius: 2px 12px 12px 12px; display: flex; gap: 4px; align-items: center; }
+  .td { width: 6px; height: 6px; border-radius: 50%; background: var(--gray); animation: ta 1.2s infinite; }
+  .td:nth-child(2){animation-delay:.2s} .td:nth-child(3){animation-delay:.4s}
+  @keyframes ta{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+  .divider { border: none; border-top: 1px solid var(--border); margin: 7px 0; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="top-bar-left">
+    <span style="font-size:20px">💬</span>
+    <div>
+      <div class="top-bar-title">내부 AI 업무 어시스턴트 — 프로토타입</div>
+      <div class="top-bar-subtitle">GPT 기반 | 법무·자금·회계·인사 통합 지원 | 개발팀 설득용 데모</div>
+    </div>
+  </div>
+  <div class="scenario-tabs">
+    <button class="scenario-tab active" onclick="loadScenario('legal')">⚖️ 법무 — 계약서 날인</button>
+    <button class="scenario-tab" onclick="loadScenario('finance')">💰 자금 — 예산 집행</button>
+    <button class="scenario-tab" onclick="resetChat()">🔄 초기화</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">채널</div>
+      <div class="sidebar-item"><span class="icon">#</span>general</div>
+      <div class="sidebar-item"><span class="icon">#</span>법무팀-공지</div>
+      <div class="sidebar-item"><span class="icon">#</span>인감날인신청 <span class="unread">2</span></div>
+      <div class="sidebar-item"><span class="icon">#</span>자금팀-집행신청</div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">다이렉트</div>
+      <div class="sidebar-item active"><span class="icon">🤖</span>내부AI봇</div>
+      <div class="sidebar-item"><span class="icon">👤</span>법무팀 담당자</div>
+      <div class="sidebar-item"><span class="icon">👤</span>자금팀 담당자</div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">앱</div>
+      <div class="sidebar-item"><span class="icon">📋</span>전자결재</div>
+      <div class="sidebar-item"><span class="icon">📁</span>구글 드라이브</div>
+    </div>
+  </div>
+
+  <div class="chat-area">
+    <div class="chat-header">
+      <div class="bot-avatar">🤖</div>
+      <div class="chat-header-info">
+        <h3>내부AI봇</h3>
+        <p><span class="online-dot"></span>온라인 — GPT 기반 AI 업무 어시스턴트</p>
+      </div>
+      <div class="header-note">💡 채팅으로 질문하거나 양식을 직접 채울 수 있어요</div>
+      <div id="aiStatusBadge" style="font-size:11px;padding:3px 9px;border-radius:20px;background:#eee;color:#888;margin-left:auto;white-space:nowrap">⚪ Claude AI 확인 중...</div>
+    </div>
+
+    <div class="chat-messages" id="chatMessages"></div>
+
+    <div class="chat-input-area">
+      <div class="chat-input-hint" id="inputHint">
+        <span>✍️</span> <span id="hintText">업무 관련 질문을 자유롭게 입력하세요</span>
+      </div>
+      <div class="chat-input-wrap">
+        <input class="chat-input" id="chatInput" placeholder="메시지 입력..." onkeydown="handleKey(event)">
+        <button class="send-btn" onclick="sendMsg()">
+          <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="right-panel" id="rightPanel">
+    <div class="panel-hdr">📊 업무 진행 현황</div>
+    <div class="panel-sec">
+      <h4>진행 상태</h4>
+      <div id="statusItems">
+        <div class="status-row"><div class="sdot pending"></div><div class="st"><div class="st-title">시나리오를 선택하세요</div></div></div>
+      </div>
+      <div class="prog-bar"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
+      <div style="font-size:11px;color:var(--gray);text-align:right" id="progText">0 / 0 완료</div>
+    </div>
+    <div class="panel-sec" id="infoPanel">
+      <h4>업무 정보</h4>
+      <div style="font-size:12px;color:var(--gray)">진행 시 자동으로 채워집니다</div>
+    </div>
+    <div class="panel-sec">
+      <h4>빠른 시나리오</h4>
+      <button class="guide-btn" onclick="loadScenario('legal')">⚖️ 계약서 날인 요청</button>
+      <button class="guide-btn" onclick="loadScenario('finance')">💰 예산 집행 신청</button>
+      <button class="guide-btn" onclick="alert('연차 신청 시나리오 준비 중')">🗓️ 연차 신청</button>
+      <button class="guide-btn" onclick="alert('비품 구매 시나리오 준비 중')">📦 비품 구매 신청</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== STATE =====
+let currentScenario = null;
+let currentQuestion = null; // { type, fieldId, label }
+let formActive = false;
+let scenarioStep = 0;
+const FORM_STATES = {};
+let scenarioVersion = 0; // Incremented each time a scenario loads — stale timeouts self-cancel
+let nlpHistory = [];       // [{role:'user'|'assistant', content:'...'}] — Claude API용 대화 이력
+let lastBotSuggestion = null; // 봇이 직전에 제안한 값 ("그렇게 해줘" 해석용)
+
+// ===== NLP HISTORY HELPERS =====
+function trackUser(text) {
+  nlpHistory.push({ role: 'user', content: text });
+  if (nlpHistory.length > 30) nlpHistory = nlpHistory.slice(-30);
+}
+function trackBot(text) {
+  // Ensure alternating roles (Claude API 요구사항)
+  if (nlpHistory.length > 0 && nlpHistory[nlpHistory.length - 1].role === 'assistant') return;
+  nlpHistory.push({ role: 'assistant', content: text });
+  if (nlpHistory.length > 30) nlpHistory = nlpHistory.slice(-30);
+}
+
+// ===== CLAUDE NLU CALL =====
+async function callNLU(userMessage) {
+  try {
+    const type = getActiveFormType();
+    const formState = type && FORM_STATES[type]
+      ? Object.fromEntries(
+          Object.entries(FORM_STATES[type]).map(([k, v]) => [k, { label: v.label, value: v.value }])
+        )
+      : null;
+
+    const res = await fetch('/api/nlu', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        history: nlpHistory.slice(-14),
+        currentQuestion,
+        lastBotSuggestion,
+        formState,
+        userMessage,
+        scenario: currentScenario
+      })
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.warn('NLU unavailable (서버 실행 필요):', e.message);
+    return null;
+  }
+}
+
+// ===== CLAUDE CHAT CALL (mid-flow Q&A) =====
+async function callChat(userMessage) {
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        history: nlpHistory.slice(-14),
+        userMessage,
+        scenario: currentScenario,
+        currentQuestion
+      })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.reply || null;
+  } catch (e) {
+    console.warn('Chat API unavailable:', e.message);
+    return null;
+  }
+}
+
+// Typing indicator
+function showTyping() {
+  if (document.getElementById('typingIndicator')) return;
+  const c = document.getElementById('chatMessages');
+  c.insertAdjacentHTML('beforeend',
+    `<div id="typingIndicator" class="msg-group">
+      <div class="msg-av bot">🤖</div>
+      <div class="msg-col">
+        <div class="msg-meta">내부AI봇</div>
+        <div class="bubble bot" style="padding:10px 16px;opacity:0.65;font-size:18px;letter-spacing:4px">●●●</div>
+      </div>
+    </div>`);
+  c.scrollTop = c.scrollHeight;
+}
+function hideTyping() { document.getElementById('typingIndicator')?.remove(); }
+
+// ===== PROCESS DEFINITIONS =====
+const PROCESS_DEFS = {
+  legal: [
+    { title: '전자결재 — 법무기타결재 기안', desc: '계약 목적·상대방·기간 등 기재 후 팀장 전결' },
+    { title: '법무팀 검토', desc: '법무팀장 검토 완료 시 슬랙으로 알림' },
+    { title: '인감날인 신청', desc: '#인감날인신청 채널 슬랙 워크플로 제출' },
+    { title: '날인 완료 및 계약 체결', desc: '날인 완료 시 슬랙 알림' },
+  ],
+  finance: [
+    { title: '지출결의서 기안 (전자결재)', desc: '목적·금액·영수증 여부 등 기재 후 팀장 승인' },
+    { title: '팀장 승인', desc: '승인 완료 시 슬랙 알림' },
+    { title: '자금팀 집행 신청', desc: '슬랙 워크플로로 집행 신청 (기안 번호 자동 연동)' },
+    { title: '자금 집행 완료', desc: '집행 완료 시 슬랙 알림' },
+  ],
+};
+
+// ===== BUILD PROCESS CARD =====
+function buildProcessCard(scenario, doneCount) {
+  const steps = PROCESS_DEFS[scenario] || [];
+  const isLegal = scenario === 'legal';
+  const rows = steps.map((s, i) => {
+    if (i < doneCount) {
+      return `<div class="step-row" style="background:#F0FDF4;border-radius:8px;padding:6px 8px;margin-bottom:4px">
+        <div class="step-num s-done">✓</div>
+        <div><div class="step-t" style="text-decoration:line-through;color:#6B7280">${s.title}</div>
+        <div class="step-d" style="color:#10B981">✅ 완료</div></div></div>`;
+    } else if (i === doneCount) {
+      const activeColor = isLegal ? '#EFF6FF' : '#F0FDFA';
+      const borderColor = isLegal ? '#3A7BD5' : '#00B4A0';
+      return `<div class="step-row" style="background:${activeColor};border-left:3px solid ${borderColor};border-radius:8px;padding:6px 8px;margin-bottom:4px">
+        <div class="step-num s-active">${i+1}</div>
+        <div><div class="step-t" style="font-weight:700">${s.title}</div>
+        <div class="step-d" style="color:${borderColor}">🔄 진행 중</div></div></div>`;
+    } else {
+      return `<div class="step-row" style="padding:6px 8px;margin-bottom:4px">
+        <div class="step-num s-pending">${i+1}</div>
+        <div><div class="step-t">${s.title}</div>
+        <div class="step-d">${s.desc}</div></div></div>`;
+    }
+  }).join('');
+  const headerColor = isLegal ? '#3A7BD5' : '#00B4A0';
+  const headerTitle = isLegal ? '⚖️ 법무 — 계약서 날인 프로세스' : '💰 자금 — 집행 프로세스';
+  return `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;margin-top:6px">
+    <div style="background:${headerColor};color:#fff;padding:7px 12px;font-size:12px;font-weight:600">${headerTitle} · ${doneCount}/${steps.length} 완료</div>
+    <div style="padding:8px 10px" class="step-list">${rows}</div>
+  </div>`;
+}
+
+// ===== FORM FIELD DEFINITIONS =====
+const FORM_DEFS = {
+  legal: {
+    title: '전자결재 — 법무기타결재',
+    type: 'legal',
+    theme: 'blue',
+    submitLabel: '📤 기안 올리기',
+    fields: [
+      { id:'counterparty', label:'계약 상대방', required:true, auto:true, value:'카카오 주식회사', hint:'법인 정식 명칭 입력', q:'계약 상대방이 카카오 외에 다른 곳인가요?' },
+      { id:'purpose', label:'계약 목적', required:true, auto:false, value:'', hint:'계약의 주요 목적', q:'계약 목적이 어떻게 되나요? (예: "AI 서비스 개발 협력 계약")' },
+      { id:'period', label:'계약 기간', required:true, auto:false, value:'', hint:'예: 2026.03 ~ 2026.12', q:'계약 기간이 어떻게 되나요? 예를 들어 "3월부터 연말까지"처럼 말씀해주세요.' },
+      { id:'department', label:'담당 부서', required:true, auto:true, value:'AI팀', hint:'요청 팀 / 부서명', q:null },
+      { id:'amount', label:'계약 금액', required:false, auto:false, value:'', hint:'미정 시 "협의 중" 입력 가능', q:'계약 금액이 정해진 경우 알려주세요. 미정이라면 "협의 중"이라고 하시면 됩니다.' },
+      { id:'request', label:'요청 사항', required:false, auto:false, value:'', hint:'추가 요청사항 (없으면 생략 가능)', q:null },
+    ]
+  },
+  finance: {
+    title: '전자결재 — 지출결의서',
+    type: 'finance',
+    theme: 'teal',
+    submitLabel: '📤 기안 올리기',
+    fields: [
+      { id:'dept', label:'신청 부서', required:true, auto:true, value:'AI팀', hint:'요청 부서명', q:null },
+      { id:'purpose', label:'지출 목적', required:true, auto:false, value:'', hint:'지출의 목적을 구체적으로', q:'교육 목적이나 지출 목적을 구체적으로 말씀해주시겠어요? (예: "외부 AI 기술 교육비")' },
+      { id:'amount', label:'금액', required:true, auto:false, value:'', hint:'예: 550,000원', q:'교육비가 얼마인가요? (예: "55만원", "550,000원")' },
+      { id:'date', label:'지출 예정일', required:true, auto:false, value:'', hint:'예: 2026.03.15', q:'지출 예정일이 언제인가요?' },
+      { id:'evidence', label:'증빙 서류', required:true, auto:false, value:'', hint:'세금계산서 / 영수증 / 카드영수증', q:'증빙 서류 종류는 무엇인가요? (세금계산서, 영수증, 카드영수증 등)' },
+      { id:'detail', label:'지출 상세 내역', required:false, auto:false, value:'', hint:'교육명, 인원, 기간 등', q:'교육 상세 내용을 알려주세요. (교육명, 참여 인원 등)' },
+    ]
+  }
+};
+
+// Workflow defs
+const WF_DEFS = {
+  legal: {
+    title: '슬랙 워크플로 — #인감날인신청',
+    type: 'legal_wf',
+    theme: 'teal',
+    submitLabel: '⚡ 워크플로 제출하기',
+    fields: [
+      { id:'docno', label:'전자결재 기안 번호', required:true, auto:true, value:'DOC-2026-0312-LAW-001', hint:'자동 연동', q:null },
+      { id:'doc', label:'날인 요청 서류', required:true, auto:true, value:'카카오 주식회사 AI 협력 계약서', hint:'서류명 정확히 입력', q:'날인을 요청할 서류명이 어떻게 되나요?' },
+      { id:'stamp', label:'날인 종류', required:true, auto:false, value:'', hint:'법인 인감 / 사용 인감 / 대표이사 서명', q:'날인 종류는 어떤 걸로 할까요? (법인 인감 / 사용 인감 / 대표이사 서명)' },
+      { id:'copies', label:'날인 부수', required:true, auto:false, value:'', hint:'예: 2부', q:'날인이 필요한 부수가 몇 부인가요?' },
+      { id:'deadline', label:'필요 일자', required:true, auto:false, value:'', hint:'날인 필요 일자', q:'날인이 언제까지 필요한가요?' },
+      { id:'requester', label:'요청자', required:true, auto:true, value:'AI팀 헤이', hint:'자동 기입', q:null },
+    ]
+  },
+  finance: {
+    title: '슬랙 워크플로 — 자금집행신청',
+    type: 'finance_wf',
+    theme: 'teal',
+    submitLabel: '⚡ 워크플로 제출하기',
+    fields: [
+      { id:'docno', label:'전자결재 기안 번호', required:true, auto:true, value:'DOC-2026-0312-FIN-001', hint:'자동 연동', q:null },
+      { id:'dept', label:'신청 부서', required:true, auto:true, value:'AI팀', hint:'자동 기입', q:null },
+      { id:'purpose', label:'집행 목적', required:true, auto:true, value:'외부 AI 기술 교육비', hint:'연동 기입', q:null },
+      { id:'amount', label:'금액', required:true, auto:true, value:'', hint:'기안에서 연동', q:null },
+      { id:'date', label:'집행 예정일', required:true, auto:false, value:'', hint:'예: 2026.03.15', q:'자금 집행 예정일은 언제인가요?' },
+      { id:'receiver', label:'수취인 (업체명)', required:true, auto:false, value:'', hint:'지급 대상 업체명', q:'지급 대상 업체명이 어떻게 되나요?' },
+      { id:'account', label:'계좌 정보', required:false, auto:false, value:'', hint:'은행 / 계좌번호 / 예금주', q:'계좌 정보를 알려주세요. (은행, 계좌번호, 예금주)' },
+    ]
+  }
+};
+
+// ===== CONTEXTUAL Q&A (GPT-like natural answers to mid-flow questions) =====
+function handleContextualQuestion(text, scenario) {
+  const t = text;
+
+  // 전자결재 설명
+  if (/전자결재.*(뭐|무엇|어떤|어떻게|설명|알려)|(뭐|무엇|어떤).*전자결재/.test(t)) {
+    const ctx = scenario === 'legal'
+      ? `<br><br>지금 진행 중인 <strong>계약서 날인</strong>에서는 <strong>법무기타결재</strong> 양식으로 기안을 작성하면 돼요. 계속 진행할까요?`
+      : scenario === 'finance'
+      ? `<br><br>지금 진행 중인 <strong>지출 신청</strong>에서는 <strong>지출결의서</strong> 양식으로 기안을 작성하면 돼요.`
+      : '';
+    return bb(`<strong>전자결재</strong>란 팀장·법무팀 등 승인권자의 결재를 온라인으로 처리하는 사내 시스템이에요.<br>계약 날인, 지출 신청, 연차 등 공식 승인이 필요한 모든 업무에 사용해요.${ctx}`);
+  }
+
+  // 날인 설명
+  if (/날인.*(뭐|무엇|어떤|어떻게|설명)|(뭐|무엇).*(날인)/.test(t)) {
+    return bb(`<strong>날인</strong>은 계약서 같은 공식 문서에 회사 인감(도장)을 찍는 것을 말해요.<br>카카오와의 계약서에는 법인 인감이 필요하고, 이 절차는 법무팀에서 처리해요.<br><br>날인까지 완료돼야 계약이 정식으로 체결돼요.`);
+  }
+
+  // 기안 설명
+  if (/기안.*(뭐|무엇|어떤|어떻게|어떻게 써|작성)|(뭐|무엇).*(기안)/.test(t)) {
+    return bb(`<strong>기안</strong>은 업무 처리를 위해 상급자 승인을 요청하는 문서예요.<br>전자결재 시스템에서 작성하며, 법무기타결재·지출결의서 등 양식을 선택해서 내용을 채운 뒤 팀장 승인을 받으면 돼요.<br><br>자동 기입 기능으로 지금까지 대화한 내용을 양식에 바로 채워드릴 수 있어요!`);
+  }
+
+  // 얼마나 걸려? / 기간?
+  if (/얼마나|며칠|기간|언제쯤|걸려/.test(t)) {
+    if (scenario === 'legal') return bb(`계약서 날인 전체 프로세스는 통상 <strong>3~5 영업일</strong>이 소요돼요.<br>• 팀장 전결: 당일~1일<br>• 법무팀 검토: 1~2일<br>• 인감 날인 처리: 1~2일<br><br>법무팀 일정에 따라 달라질 수 있으니 여유 있게 진행하는 게 좋아요.`);
+    if (scenario === 'finance') return bb(`자금 집행은 통상 <strong>3~7 영업일</strong>이 소요돼요.<br>• 팀장 승인: 당일~1일<br>• 자금팀 처리: 2~5일`);
+  }
+
+  // 법무팀 / 자금팀 연락
+  if (/법무팀.*(누구|어디|연락|담당|채널)/.test(t)) {
+    return bb(`법무팀은 슬랙 <strong>#법무팀</strong> 채널에서 찾을 수 있어요.<br>긴급 계약 문의는 법무팀 담당자에게 직접 DM 하는 것을 추천해요.`);
+  }
+  if (/자금팀.*(누구|어디|연락|담당|채널)/.test(t)) {
+    return bb(`자금팀은 슬랙 <strong>#자금팀</strong> 채널에서 찾을 수 있어요.<br>집행 관련 급한 문의는 자금팀 담당자에게 직접 DM 해주세요.`);
+  }
+
+  // 날인 종류 / 인감 종류 차이 설명 (상세 지드라이브 문서 기반)
+  if (/날인.*(종류|뭐가|무엇이|차이|다른|어떤|어느|어떻게|설명|알려)|인감.*(종류|차이|법인|사용|다른)|(법인\s*인감|사용\s*인감|대표이사\s*서명).*(차이|다른|언제|어떨|뭐가)/.test(t)) {
+    const rec = /카카오.*날인|날인.*카카오|카카오측|상대방.*날인|날인.*요청/.test(t)
+      ? `<br><br>💡 <strong>카카오측이 요청하는 일반 협력 계약이라면 → 사용 인감</strong>이 맞아요. 법인 인감은 등기소·금융거래 등 특수 계약에만 쓰이고 법무팀 추가 절차가 필요해서 시간이 더 걸려요.`
+      : `<br><br>💡 일반 B2B 협력 계약·용역 계약에는 대부분 <strong>사용 인감</strong>을 사용해요.`;
+    return bb(`📋 <strong>날인 종류 안내</strong> (사내 법무 가이드 기준)<br><br>
+<strong>🔵 법인 인감</strong> — 등기된 공식 인감. 부동산 계약, 금융거래, 인수합병 등 법적 구속력이 특히 중요한 계약에만 사용. 법무팀 별도 승인 필요, 처리 기간 +1~2일.<br><br>
+<strong>🟢 사용 인감</strong> — 법인 인감을 위임받은 도장. 일반적인 협력 계약, MOU, 용역 계약 등 대부분의 B2B 계약에 사용. 가장 흔한 선택.<br><br>
+<strong>🟡 대표이사 서명</strong> — 인감 없이 대표이사 자필 서명으로 대체. 상대방이 서명만 요청하거나 간단한 협약서에 활용.${rec}`);
+  }
+
+  return null;
+}
+
+// ===== ACTIVE FORM TYPE RESOLVER =====
+function getActiveFormType() {
+  if (currentQuestion) return currentQuestion.type;
+  // Workflow forms take priority (they come after base forms in the flow)
+  if (FORM_STATES['legal_wf'] && Object.keys(FORM_STATES['legal_wf']).length > 0) return 'legal_wf';
+  if (FORM_STATES['finance_wf'] && Object.keys(FORM_STATES['finance_wf']).length > 0) return 'finance_wf';
+  return currentScenario;
+}
+
+// ===== READ-ONLY FORM SNAPSHOT (no element IDs — safe for repeated chat rendering) =====
+function buildFormSnapshot(def) {
+  const s = FORM_STATES[def.type];
+  if (!s) return '';
+  const {filled, total} = countRequired(def.type);
+  const allDone = filled === total;
+  const teal = def.theme === 'teal';
+  const headerColor = teal ? '#00B4A0' : '#3A7BD5';
+
+  const rows = def.fields.map(f => {
+    const val = s[f.id] ? s[f.id].value : '';
+    const hasVal = val && val.trim() !== '';
+    if (!hasVal && !f.required) return '';
+    const valHtml = hasVal
+      ? `<span style="color:#065F46;font-weight:600">${val}</span>`
+      : `<span style="color:#D97706;font-style:italic">미입력 필요</span>`;
+    const icon = hasVal ? '✅' : '⚠️';
+    const autoTag = s[f.id] && s[f.id].auto && hasVal
+      ? ` <span style="font-size:10px;background:#ECFDF5;color:#059669;padding:1px 5px;border-radius:4px;margin-left:3px">AI</span>` : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #F3F4F6;gap:8px">
+      <span style="font-size:12px;color:#374151;white-space:nowrap">${icon} ${f.label}${autoTag}</span>
+      <span style="font-size:12px;text-align:right">${valHtml}</span></div>`;
+  }).filter(r => r).join('');
+
+  const statusBg = allDone ? '#ECFDF5' : '#FFF7ED';
+  const statusContent = allDone
+    ? `✅ 필수 항목 모두 완료!&nbsp;&nbsp;<button onclick="onFormSubmit('${def.type}')" style="background:${headerColor};color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600">${def.submitLabel}</button>`
+    : `⚠️ 필수 항목 ${total - filled}개 남음`;
+
+  return `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;margin-top:6px">
+    <div style="background:${headerColor};color:#fff;padding:5px 12px;font-size:11.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+      <span>${def.title}</span><span style="opacity:.85">${filled}/${total} 완료</span>
+    </div>
+    <div style="padding:8px 12px">${rows}</div>
+    <div style="background:${statusBg};padding:7px 12px;font-size:12px;display:flex;align-items:center;gap:8px">${statusContent}</div>
+  </div>`;
+}
+
+// ===== HELPERS =====
+function timeNow() {
+  const n = new Date();
+  return n.getHours().toString().padStart(2,'0')+':'+n.getMinutes().toString().padStart(2,'0');
+}
+function botMsg(content, extra='') {
+  return `<div class="msg-group"><div class="msg-av bot">🤖</div>
+    <div class="msg-col"><div class="msg-meta">내부AI봇 <span style="font-weight:400;color:#bbb;font-size:10.5px">${timeNow()}</span></div>
+    ${content}${extra}</div></div>`;
+}
+function userMsg(text) {
+  return `<div class="msg-group user"><div class="msg-av user">헤이</div>
+    <div class="msg-col"><div class="msg-meta">헤이 (나) <span style="font-weight:400;color:#bbb;font-size:10.5px">${timeNow()}</span></div>
+    <div class="bubble user">${text}</div></div></div>`;
+}
+function bb(html) { return `<div class="bubble bot">${html}</div>`; }
+function nb(html) { return `<div class="bubble notif">${html}</div>`; }
+function sb(html) { return `<div class="bubble success">${html}</div>`; }
+function cb(html) { return `<div class="bubble confirm">${html}</div>`; }
+function addMsgs(msgs) {
+  const c = document.getElementById('chatMessages');
+  msgs.forEach(m => c.insertAdjacentHTML('beforeend', m));
+  c.scrollTop = c.scrollHeight;
+}
+
+// ===== FLOATING FORM CARD (always follows conversation) =====
+function appendFloatingFormCard(type) {
+  if (!formActive) return;
+  const def = [...Object.values(FORM_DEFS), ...Object.values(WF_DEFS)].find(d => d.type === type);
+  if (!def) return;
+  const prev = document.getElementById('floatingFormCard');
+  if (prev) prev.remove();
+  const c = document.getElementById('chatMessages');
+  const wrap = document.createElement('div');
+  wrap.id = 'floatingFormCard';
+  wrap.style.cssText = 'margin:4px 8px 8px 56px;';
+  wrap.innerHTML = buildFormCard(def);
+  c.appendChild(wrap);
+  c.scrollTop = c.scrollHeight;
+}
+
+// ===== FORM CARD RENDERING =====
+function initFormState(def) {
+  const state = {};
+  def.fields.forEach(f => {
+    state[f.id] = { ...f };
+  });
+  FORM_STATES[def.type] = state;
+}
+
+function countRequired(type) {
+  const s = FORM_STATES[type];
+  if (!s) return { filled: 0, total: 0 };
+  const reqs = Object.values(s).filter(f => f.required);
+  const filled = reqs.filter(f => f.value && f.value.trim() !== '').length;
+  return { filled, total: reqs.length };
+}
+
+function buildFormCard(def) {
+  const s = FORM_STATES[def.type];
+  const {filled, total} = countRequired(def.type);
+  const allDone = filled === total;
+  const pct = total ? Math.round(filled/total*100) : 0;
+  const isDone = (f) => s[f.id].value && s[f.id].value.trim() !== '';
+  const isAutoFilled = (f) => s[f.id].auto && isDone(f);
+  const teal = def.theme === 'teal';
+
+  const fieldRows = def.fields.map(f => {
+    const val = s[f.id].value;
+    const filled2 = val && val.trim() !== '';
+    let inputClass = 'field-input';
+    if (filled2) {
+      inputClass += s[f.id].auto ? ' auto-filled' : ' user-filled';
+    } else if (f.required) {
+      inputClass += ' needs-input';
+    }
+    const checkIcon = filled2 ? `<span class="field-check">✅</span>` : (f.required ? `<span class="field-check" style="color:var(--orange)">⚠️</span>` : '');
+    return `<div class="field-row" id="frow-${def.type}-${f.id}">
+      <div class="field-label-row">
+        <span class="field-lbl">${f.label}</span>
+        ${f.required ? `<span class="field-req">필수</span>` : `<span class="field-opt">선택</span>`}
+        ${s[f.id].auto && filled2 ? `<span class="field-auto">✨ AI 기입</span>` : ''}
+      </div>
+      <div class="field-input-wrap">
+        <input class="${inputClass}" id="finput-${def.type}-${f.id}"
+          value="${val.replace(/"/g,'&quot;')}"
+          placeholder="${f.hint}"
+          oninput="onFieldInput('${def.type}','${f.id}',this.value)"
+          onfocus="onFieldFocus('${def.type}','${f.id}')">
+        ${checkIcon}
+      </div>
+      ${f.hint && !filled2 ? `<div class="field-hint">💡 ${f.hint}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const submitCls = allDone
+    ? (teal ? 'submit-btn ready-teal' : 'submit-btn ready-blue')
+    : 'submit-btn disabled';
+  const submitFn = allDone
+    ? `onFormSubmit('${def.type}')`
+    : `showSubmitHint('${def.type}')`;
+  const statusTxt = allDone
+    ? `<span class="form-status-text ready">✅ 모든 필수 항목 완료</span>`
+    : `<span class="form-status-text">⚠️ 필수 항목 ${total-filled}개 미입력</span>`;
+  const badgeCls = allDone ? 'form-progress-badge all-done' : 'form-progress-badge';
+
+  return `<div class="form-card ${teal ? 'teal-theme' : ''}" id="formCard-${def.type}">
+    <div class="form-card-header ${teal ? 'teal-bg' : 'blue-bg'}">
+      <div class="fch-left">
+        <span style="font-size:16px">${teal ? '⚡' : '📋'}</span>
+        <span class="fch-title">${def.title}</span>
+      </div>
+      <div class="fch-right">
+        <span class="${badgeCls}" id="fprog-${def.type}">필수 ${filled}/${total} 완료</span>
+      </div>
+    </div>
+    <div class="form-fields" id="ffields-${def.type}">${fieldRows}</div>
+    <div class="form-card-footer">
+      <div id="fstatus-${def.type}">${statusTxt}</div>
+      <button class="${submitCls}" id="fsubmit-${def.type}" onclick="${submitFn}">${def.submitLabel}</button>
+    </div>
+  </div>`;
+}
+
+function updateFormCard(type) {
+  // Update all fields in place without full re-render
+  const def = [...Object.values(FORM_DEFS), ...Object.values(WF_DEFS)].find(d => d.type === type);
+  if (!def) return;
+  const s = FORM_STATES[type];
+
+  def.fields.forEach(f => {
+    const input = document.getElementById(`finput-${type}-${f.id}`);
+    if (!input) return;
+    const val = s[f.id].value;
+    const filled = val && val.trim() !== '';
+    input.value = val;
+    input.className = 'field-input' + (filled ? (s[f.id].auto ? ' auto-filled' : ' user-filled') : (f.required ? ' needs-input' : ''));
+    const row = document.getElementById(`frow-${type}-${f.id}`);
+    if (!row) return;
+    // Update check icon
+    const wrap = row.querySelector('.field-input-wrap');
+    let checkEl = wrap ? wrap.querySelector('.field-check') : null;
+    if (!checkEl && wrap) {
+      checkEl = document.createElement('span');
+      checkEl.className = 'field-check';
+      wrap.appendChild(checkEl);
+    }
+    if (checkEl) {
+      if (filled) checkEl.textContent = '✅';
+      else if (f.required) { checkEl.textContent = '⚠️'; checkEl.style.color='var(--orange)'; }
+      else checkEl.textContent = '';
+    }
+    // Update hint
+    let hint = row.querySelector('.field-hint');
+    if (f.hint && !filled) {
+      if (!hint) { hint = document.createElement('div'); hint.className = 'field-hint'; row.appendChild(hint); }
+      hint.textContent = '💡 ' + f.hint;
+    } else if (hint && filled) { hint.remove(); }
+    // Update label badges
+    const labelRow = row.querySelector('.field-label-row');
+    if (labelRow) {
+      let autoBadge = labelRow.querySelector('.field-auto');
+      if (s[f.id].auto && filled) {
+        if (!autoBadge) { autoBadge = document.createElement('span'); autoBadge.className='field-auto'; labelRow.appendChild(autoBadge); }
+        autoBadge.textContent = '✨ AI 기입';
+      } else if (autoBadge) { autoBadge.remove(); }
+    }
+  });
+
+  // Update progress badge and buttons
+  const {filled, total} = countRequired(type);
+  const allDone = filled === total;
+  const teal = def.theme === 'teal';
+  const prog = document.getElementById(`fprog-${type}`);
+  if (prog) {
+    prog.textContent = `필수 ${filled}/${total} 완료`;
+    prog.className = allDone ? 'form-progress-badge all-done' : 'form-progress-badge';
+  }
+  const status = document.getElementById(`fstatus-${type}`);
+  if (status) {
+    status.innerHTML = allDone
+      ? `<span class="form-status-text ready">✅ 모든 필수 항목 완료</span>`
+      : `<span class="form-status-text">⚠️ 필수 항목 ${total-filled}개 미입력</span>`;
+  }
+  const btn = document.getElementById(`fsubmit-${type}`);
+  if (btn) {
+    if (allDone) {
+      btn.className = `submit-btn ${teal ? 'ready-teal' : 'ready-blue'}`;
+      btn.disabled = false;
+      btn.onclick = () => onFormSubmit(type);
+    } else {
+      btn.className = 'submit-btn disabled';
+      btn.disabled = false; // keep clickable for hint
+      btn.onclick = () => showSubmitHint(type);
+    }
+  }
+}
+
+function showSubmitHint(type) {
+  const {filled, total} = countRequired(type);
+  addMsgs([botMsg(nb(`⚠️ 아직 필수 항목 ${total-filled}개가 비어있어요. 채팅으로 알려주시거나 아래 양식에서 직접 입력해주세요!`))]);
+  askNextMissingField(type);
+}
+
+// ===== FIELD INPUT HANDLERS =====
+function onFieldInput(type, fieldId, value) {
+  if (!FORM_STATES[type]) return;
+  FORM_STATES[type][fieldId].value = value;
+  FORM_STATES[type][fieldId].auto = false;
+  updateFormCard(type);
+  checkAllDoneAndMaybeActivate(type);
+}
+
+function onFieldFocus(type, fieldId) {
+  // Highlight active question in input hint
+  const def = [...Object.values(FORM_DEFS), ...Object.values(WF_DEFS)].find(d => d.type === type);
+  if (!def) return;
+  const f = def.fields.find(ff => ff.id === fieldId);
+  if (f) {
+    document.getElementById('hintText').innerHTML =
+      `<span class="active-q">📝 "${f.label}"</span>를 직접 입력 중 — 또는 채팅으로 답변해도 됩니다`;
+    currentQuestion = { type, fieldId, label: f.label };
+  }
+}
+
+function checkAllDoneAndMaybeActivate(type) {
+  const {filled, total} = countRequired(type);
+  if (filled === total) {
+    // All required filled — stop sequential questioning
+    currentQuestion = null;
+    setHintDefault();
+  }
+}
+
+function setHintDefault() {
+  document.getElementById('hintText').textContent = '업무 관련 질문을 자유롭게 입력하세요';
+}
+
+// ===== MULTI-FIELD EXTRACTOR =====
+function extractAllFields(text, type) {
+  const result = {};
+
+  // Period: "6월부터 8월까지", "3월~12월", "2026.03~2026.12"
+  const periodM = text.match(/(\d{1,2})월\s*(?:부터|에서|-|~)?\s*(?:\d{4}년\s*)?(\d{1,2})월/);
+  if (periodM) {
+    result.period = `2026.${String(periodM[1]).padStart(2,'0')} ~ 2026.${String(periodM[2]).padStart(2,'0')}`;
+  } else {
+    const periodM2 = text.match(/(\d{4}\.\d{2})\s*(?:~|-)\s*(\d{4}\.\d{2})/);
+    if (periodM2) result.period = `${periodM2[1]} ~ ${periodM2[2]}`;
+  }
+
+  // Purpose/목적: "목적은 X이야", "목적: X"
+  const purposeM = text.match(/목적(?:은|이|:)\s*(.+?)(?:이야|야|입니다|이에요|이고|$)/);
+  if (purposeM) {
+    const raw = purposeM[1].trim();
+    result.purpose = (type === 'finance') ? raw : (raw.endsWith('계약') ? raw : raw + ' 계약');
+  } else {
+    // "X 계약이야" pattern
+    const purposeM2 = text.match(/([가-힣\s]+)\s+계약(?:이야|야|입니다|이에요)?/);
+    if (purposeM2 && !text.match(/계약서|날인|계약 기간|계약 상대/)) {
+      result.purpose = purposeM2[1].trim() + ' 계약';
+    }
+  }
+
+  // Amount: "55만원", "550,000원"
+  const amountM = text.match(/(\d[\d,]*)\s*만원/);
+  if (amountM) {
+    result.amount = (parseInt(amountM[1].replace(/,/g,'')) * 10000).toLocaleString() + '원';
+  } else {
+    const amountM2 = text.match(/(\d[\d,]+)\s*원/);
+    if (amountM2) result.amount = parseInt(amountM2[1].replace(/,/g,'')).toLocaleString() + '원';
+    else if (/협의|미정|없|몰/.test(text)) result.amount = '협의 중';
+  }
+
+  // Copies: "2부", "두 부"
+  const copiesM = text.match(/(\d+|두|세|네|한)\s*부/);
+  if (copiesM) {
+    const numMap = {두:2, 세:3, 네:4, 한:1};
+    const n = numMap[copiesM[1]] || copiesM[1];
+    result.copies = n + '부';
+  }
+
+  // Date: "2026.03.15", "3월 15일"
+  const dateM = text.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  if (dateM) {
+    const d = `${dateM[1]}.${String(dateM[2]).padStart(2,'0')}.${String(dateM[3]).padStart(2,'0')}`;
+    result.date = d; result.deadline = d;
+  } else {
+    const dateM2 = text.match(/(\d{1,2})월\s*(\d{1,2})일/);
+    if (dateM2) {
+      const d = `2026.${String(dateM2[1]).padStart(2,'0')}.${String(dateM2[2]).padStart(2,'0')}`;
+      result.date = d; result.deadline = d;
+    }
+  }
+
+  // Stamp type
+  if (/법인\s*인감/.test(text)) result.stamp = '법인 인감';
+  else if (/사용\s*인감/.test(text)) result.stamp = '사용 인감';
+  else if (/대표이사\s*서명|서명/.test(text)) result.stamp = '대표이사 서명';
+
+  // Evidence type
+  if (/세금계산서/.test(text)) result.evidence = '세금계산서';
+  else if (/카드영수증|카드\s*영수증/.test(text)) result.evidence = '카드영수증';
+  else if (/영수증/.test(text)) result.evidence = '영수증';
+
+  return result;
+}
+
+// ===== SEQUENTIAL QUESTIONING =====
+function askNextMissingField(type) {
+  const def = [...Object.values(FORM_DEFS), ...Object.values(WF_DEFS)].find(d => d.type === type);
+  if (!def) return;
+  const s = FORM_STATES[type];
+  const missing = def.fields.filter(f => f.required && (!s[f.id].value || s[f.id].value.trim() === '') && f.q);
+  if (missing.length === 0) {
+    currentQuestion = null;
+    setHintDefault();
+    return;
+  }
+  const next = missing[0];
+  currentQuestion = { type, fieldId: next.id, label: next.label };
+
+  // Highlight the field
+  const input = document.getElementById(`finput-${type}-${next.id}`);
+  if (input) {
+    input.className = 'field-input needs-input active-question';
+    input.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  document.getElementById('hintText').innerHTML =
+    `<span class="active-q">🤖 "${next.label}"</span>에 대해 답변해주세요`;
+
+  setTimeout(() => {
+    addMsgs([botMsg(cb(`❓ <strong>${next.label}</strong><br>${next.q}`))]);
+    trackBot(`${next.label}에 대해 알려주세요. ${next.q}`);
+    // 질문의 예시값을 lastBotSuggestion으로 저장 (예: "AI 서비스 개발 협력 계약")
+    const exMatch = next.q.match(/예[:\s]+"?([^"]+)"?/);
+    if (exMatch) lastBotSuggestion = exMatch[1].replace(/"/g,'').trim();
+    appendFloatingFormCard(type);
+  }, 500);
+}
+
+// ===== META-QUESTION DETECTOR =====
+// "카카오 mcp 협약이라고 적어도 되나?" → 질문 (답변 X)
+// "카카오 mcp 협약이야" → 답변 (O)
+function isMetaQuestion(text) {
+  const t = text.trim();
+  // Ends with question mark
+  if (t.endsWith('?') || t.endsWith('？')) return true;
+  // Contains question/uncertainty patterns
+  if (/되나요?|괜찮[나아]?|맞나요?|맞아요?|맞죠|어떻게 써|어떻게 적|어떻게 입력|뭐야|뭔가요?|뭐예요|뭐라고|가능한가|가능해요?|써도 되|적어도 되|입력해도 되|해도 돼|이렇게 써도|이렇게 적어도|이렇게 입력해도|어떡해|어떡하/.test(t)) return true;
+  return false;
+}
+
+// ===== FIELD-LEVEL Q&A =====
+// Handles "X이라고 써도 되나?" style questions mid-form
+function handleFieldQuestion(text, question) {
+  if (!question) return null;
+  const { type, fieldId, label } = question;
+
+  // Extract proposed value: "X이라고", "X라고", "X으로", "X로"
+  let proposedValue = null;
+  const propMatch = text.match(/(?:목적[은이에]?\s*|기간[은이에]?\s*|부서[는은에]?\s*|금액[은이에]?\s*)?(.+?)(?:이라고|라고|으로|로)\s*(?:써도|적어도|입력해도|쓰면|쓰는|적으면|넣어도|기재해도)/);
+  if (propMatch) {
+    proposedValue = propMatch[1].trim();
+    // Strip field-name prefixes like "계약 목적에 X" → X
+    proposedValue = proposedValue.replace(/^.+[에을를]\s*/, '').trim();
+  }
+
+  // ── 날인 종류(stamp) 필드 전용 상세 안내 ──
+  if (fieldId === 'stamp') {
+    const stampHtml = `📋 <strong>날인 종류 안내</strong> (사내 법무 가이드 기준)<br><br>
+<strong>🔵 법인 인감</strong> — 등기된 공식 인감. 부동산·금융·인수합병 등 법적 구속력이 특히 중요한 계약. 법무팀 별도 승인 필요, 처리 +1~2일.<br><br>
+<strong>🟢 사용 인감</strong> — 법인 인감 위임 도장. 일반 협력·용역·MOU 등 대부분의 B2B 계약에 사용. 가장 흔한 선택.<br><br>
+<strong>🟡 대표이사 서명</strong> — 인감 없이 서명으로 대체. 상대방이 서명만 요청하거나 간단한 협약서에 활용.<br><br>
+💡 <strong>카카오측이 날인을 요청하는 일반 협력 계약이라면 → 사용 인감</strong>이 맞아요. 법인 인감은 처리 기간이 더 길어요.`;
+    lastBotSuggestion = '사용 인감';
+    const stampBtn = `<div class="quick-replies" style="margin-top:7px">
+      <button class="qr" onclick="quickFillField('${type}','stamp','사용 인감','날인 종류')">🟢 사용 인감으로 진행하기</button>
+      <button class="qr" onclick="quickFillField('${type}','stamp','법인 인감','날인 종류')">🔵 법인 인감으로 하기</button>
+      <button class="qr" onclick="quickFillField('${type}','stamp','대표이사 서명','날인 종류')">🟡 대표이사 서명으로 하기</button>
+    </div>`;
+    trackBot(stampHtml);
+    return { html: bb(stampHtml), extras: stampBtn };
+  }
+
+  const fieldGuide = {
+    purpose: `네, 그렇게 쓰셔도 됩니다 😊 법무팀 검토 시 계약 핵심 내용이 담기면 충분해요. 더 구체적으로는 "<strong>${proposedValue || 'MCP 카카오 협약 계약'}</strong>" 같이 작성하면 좋아요.`,
+    period: `네, 해당 기간으로 기재하시면 됩니다. 형식은 "YYYY.MM ~ YYYY.MM" 이에요.`,
+    counterparty: `정식 법인명을 정확히 기재해야 해요. 예: "카카오 주식회사". 자회사면 별도 법인명을 쓰세요.`,
+    amount: `계약 금액이 확정되지 않은 경우 "협의 중"으로 입력해도 됩니다.`,
+    copies: `보통 2부 (당사 1부, 상대방 1부)가 기본이에요.`,
+  };
+  const advice = fieldGuide[fieldId]
+    || (proposedValue
+      ? `네, "<strong>${proposedValue}</strong>"라고 <strong>${label}</strong>에 입력하셔도 됩니다!`
+      : `<strong>${label}</strong>에 대해 질문이 있으시군요! 어떻게 작성해야 할지 모르시면 자유롭게 설명해주세요 😊`);
+
+  const escapedVal = proposedValue ? proposedValue.replace(/'/g, "\\'") : '';
+  const quickBtn = proposedValue
+    ? `<div class="quick-replies" style="margin-top:7px">
+        <button class="qr" onclick="quickFillField('${type}','${fieldId}','${escapedVal}','${label}')">✅ "${proposedValue}" 그대로 입력하기</button>
+        <button class="qr" onclick="askNextMissingFieldNow('${type}')">✏️ 직접 다시 입력할게요</button>
+      </div>`
+    : '';
+
+  // 봇이 제안한 값을 lastBotSuggestion에 저장 (다음 "그렇게 해줘" 해석용)
+  if (proposedValue) lastBotSuggestion = proposedValue;
+  trackBot(advice);
+
+  return { html: bb(advice), extras: quickBtn };
+}
+
+// Called from quick-fill button
+function quickFillField(type, fieldId, value, label) {
+  if (!FORM_STATES[type] || FORM_STATES[type][fieldId] === undefined) return;
+  addMsgs([userMsg(`"${value}"로 입력해줘`)]);
+  FORM_STATES[type][fieldId].value = value;
+  FORM_STATES[type][fieldId].auto = false;
+  currentQuestion = null;
+  updateFormCard(type);
+  setTimeout(() => {
+    const {filled, total} = countRequired(type);
+    if (filled === total) {
+      setHintDefault();
+      addMsgs([botMsg(cb(`✅ <strong>${label}</strong>에 "<em>${value}</em>"를 입력했어요!`))]);
+      appendFloatingFormCard(type);
+    } else {
+      addMsgs([botMsg(cb(`✅ <strong>${label}</strong>에 "<em>${value}</em>"를 입력했어요!`))]);
+      appendFloatingFormCard(type);
+      setTimeout(() => askNextMissingField(type), 800);
+    }
+  }, 300);
+}
+
+// Re-ask the current missing field (for "직접 입력할게요" button)
+function askNextMissingFieldNow(type) {
+  addMsgs([userMsg('직접 입력할게요')]);
+  setTimeout(() => askNextMissingField(type), 300);
+}
+
+function handleChatAnswer(text) {
+  if (!currentQuestion) return false;
+  // Never treat questions as answers — "X이라고 써도 되나?" is a Q, not an answer
+  if (isMetaQuestion(text)) return false;
+  const { type, fieldId, label } = currentQuestion;
+  if (!FORM_STATES[type]) return false;
+  const def = [...Object.values(FORM_DEFS), ...Object.values(WF_DEFS)].find(d => d.type === type);
+
+  // Extract all possible fields from this message
+  const extracted = extractAllFields(text, type);
+
+  // Fill the currentQuestion field (parsed or raw)
+  let primaryValue = extracted[fieldId] || text;
+  // Fallback for copies if not caught by extractor
+  if (fieldId === 'copies' && !extracted.copies) {
+    const m = text.match(/(\d+)/);
+    if (m) primaryValue = m[1] + '부';
+  }
+
+  FORM_STATES[type][fieldId].value = primaryValue;
+  FORM_STATES[type][fieldId].auto = false;
+
+  // Apply any bonus fields extracted simultaneously
+  const bonusFields = [];
+  Object.entries(extracted).forEach(([fid, fval]) => {
+    if (fid === fieldId) return;
+    if (FORM_STATES[type] && FORM_STATES[type][fid] !== undefined &&
+        (!FORM_STATES[type][fid].value || FORM_STATES[type][fid].value.trim() === '')) {
+      FORM_STATES[type][fid].value = fval;
+      FORM_STATES[type][fid].auto = false;
+      if (def) {
+        const f = def.fields.find(ff => ff.id === fid);
+        if (f) bonusFields.push({ label: f.label, value: fval });
+      }
+    }
+  });
+
+  updateFormCard(type);
+
+  const input = document.getElementById(`finput-${type}-${fieldId}`);
+  if (input) input.className = 'field-input user-filled';
+
+  setTimeout(() => {
+    let confirmMsg = `✅ <strong>${label}</strong>에 "<em>${primaryValue}</em>"을 입력했어요!`;
+    if (bonusFields.length > 0) {
+      const extra = bonusFields.map(b => `<strong>${b.label}</strong>: "${b.value}"`).join(', ');
+      confirmMsg += `<br>추가로 ${extra}도 함께 채웠어요 😊`;
+    }
+    const {filled, total} = countRequired(type);
+    if (filled === total) {
+      currentQuestion = null;
+      setHintDefault();
+      addMsgs([botMsg(cb(confirmMsg))]);
+      appendFloatingFormCard(type);
+    } else {
+      addMsgs([botMsg(cb(confirmMsg))]);
+      appendFloatingFormCard(type);
+      setTimeout(() => askNextMissingField(type), 800);
+    }
+  }, 300);
+
+  return true;
+}
+
+// ===== FREE-FORM EXTRACTION (when form active, no currentQuestion) =====
+function tryFreeFormExtract(text) {
+  if (!formActive || !currentScenario) return false;
+  const type = currentScenario;
+  if (!FORM_STATES[type]) return false;
+  const def = [...Object.values(FORM_DEFS), ...Object.values(WF_DEFS)].find(d => d.type === type);
+  const extracted = extractAllFields(text, type);
+  const filled = [];
+  Object.entries(extracted).forEach(([fid, fval]) => {
+    if (FORM_STATES[type][fid] !== undefined &&
+        (!FORM_STATES[type][fid].value || FORM_STATES[type][fid].value.trim() === '')) {
+      FORM_STATES[type][fid].value = fval;
+      FORM_STATES[type][fid].auto = false;
+      if (def) {
+        const f = def.fields.find(ff => ff.id === fid);
+        if (f) filled.push({ label: f.label, value: fval });
+      }
+    }
+  });
+  if (filled.length > 0) {
+    updateFormCard(type);
+    setTimeout(() => {
+      const summary = filled.map(b => `<strong>${b.label}</strong>: "${b.value}"`).join(', ');
+      const {filled: f2, total} = countRequired(type);
+      if (f2 === total) {
+        currentQuestion = null;
+        setHintDefault();
+        addMsgs([botMsg(cb(`✅ ${summary} 입력했어요!`))]);
+        appendFloatingFormCard(type);
+      } else {
+        addMsgs([botMsg(cb(`✅ ${summary} 입력했어요!`))]);
+        appendFloatingFormCard(type);
+        setTimeout(() => askNextMissingField(type), 800);
+      }
+    }, 300);
+    return true;
+  }
+  return false;
+}
+
+// ===== TRIGGER YES (QR button) =====
+function triggerYes(scenario) {
+  addMsgs([userMsg('응, 해줘!')]);
+  setTimeout(() => {
+    if (scenario === 'legal') showLegalForm();
+    else if (scenario === 'finance') showFinanceForm();
+  }, 300);
+}
+
+// ===== FORM SUBMIT =====
+function onFormSubmit(type) {
+  const def = FORM_DEFS[type] || WF_DEFS[type]
+    || Object.values(WF_DEFS).find(d => d.type === type);
+  if (!def) return;
+  const btn = document.getElementById(`fsubmit-${type}`);
+  if (btn) { btn.textContent = '⏳ 제출 중...'; btn.disabled = true; }
+
+  setTimeout(() => {
+    // Remove the floating form card and deactivate form
+    document.getElementById('floatingFormCard')?.remove();
+    formActive = false;
+    currentQuestion = null;
+    if (type === 'legal') afterLegalApproval();
+    else if (type === 'finance') afterFinanceApproval();
+    else if (type === 'legal_wf') afterLegalWorkflow();
+    else if (type === 'finance_wf') afterFinanceWorkflow();
+  }, 1200);
+}
+
+// ===== SCENARIO: LEGAL =====
+function loadLegal() {
+  scenarioVersion++;
+  const sv = scenarioVersion;
+  currentScenario = 'legal';
+  formActive = false;
+  scenarioStep = 0;
+  currentQuestion = null;
+  setHintDefault();
+  initFormState(FORM_DEFS.legal);
+  updateStatusPanel('legal', 0);
+  updateInfoPanel('legal');
+
+  const chat = document.getElementById('chatMessages');
+  chat.innerHTML = `<div style="text-align:center;font-size:11.5px;color:var(--gray);padding:8px 0 14px;font-style:italic">📌 시나리오: 계약서 날인 (법무) — 시작</div>`;
+
+  addMsgs([userMsg('법무 업무 처음인데요, 카카오랑 계약서 날인 받아야하는데 어떻게 진행해야하나요?')]);
+
+  // Message 1 (800ms): Process overview only
+  setTimeout(() => {
+    if (scenarioVersion !== sv) return;
+    addMsgs([botMsg(
+      bb(`<strong>안녕하세요! 계약서 날인 프로세스를 안내해드릴게요 😊</strong><br><br>
+      <strong>카카오 법인과의 계약서 날인</strong>은 아래 순서로 진행됩니다.`) +
+      buildProcessCard('legal', 0) +
+      `<div class="src" style="margin-top:6px">📚 참고: [법무팀 계약가이드] [인감날인신청 채널 안내]</div>`
+    )]);
+  }, 800);
+
+  // Message 2 (2500ms): GPT-like suggestion + button
+  setTimeout(() => {
+    if (scenarioVersion !== sv) return;
+    addMsgs([botMsg(
+      bb(`1번인 <strong>전자결재 법무기타결재 기안</strong>부터 시작해볼까요?<br>
+      대화에서 파악한 계약 상대방 정보로 양식을 자동으로 채워드릴 수 있어요!`),
+      `<div class="action-btns">
+        <button class="abtn primary" onclick="showLegalForm()">📋 전자결재 자동 기입하기</button>
+        <button class="abtn ghost" onclick="askLegalDetail()">❓ 예외 케이스 문의</button>
+      </div>
+      <div class="quick-replies" style="margin-top:7px">
+        <button class="qr" onclick="triggerYes('legal')">응, 해줘!</button>
+        <button class="qr" onclick="handleQR('계약 상대방이 카카오 자회사면요?')">계약 상대방이 카카오 자회사면요?</button>
+        <button class="qr" onclick="handleQR('NDA도 같은 절차인가요?')">NDA도 같은 절차인가요?</button>
+      </div>`
+    )]);
+  }, 2500);
+}
+
+function showLegalForm() {
+  if (formActive) return;
+  formActive = true;
+  const def = FORM_DEFS.legal;
+  const s = FORM_STATES.legal;
+
+  // Only mention fields we actually know from conversation
+  const knownParts = [];
+  if (s.counterparty && s.counterparty.value) knownParts.push(`계약 상대방 <strong>${s.counterparty.value}</strong>`);
+  if (s.department && s.department.value) knownParts.push(`담당 부서 <strong>${s.department.value}</strong>`);
+  const knownText = knownParts.length > 0
+    ? `${knownParts.join(', ')}은 자동으로 채웠어요.<br>`
+    : '';
+
+  addMsgs([botMsg(
+    bb(`네, 시작할게요! ${knownText}나머지 항목은 차례로 여쭤볼게요 😊`)
+  )]);
+  appendFloatingFormCard('legal');
+  setTimeout(() => askNextMissingField('legal'), 800);
+}
+
+function afterLegalApproval() {
+  updateStatusPanel('legal', 1);
+  // Step 1 done, step 2 active
+  addMsgs([botMsg(
+    sb(`✅ <strong>기안이 접수되었습니다!</strong><br>기안 번호: <strong>DOC-2026-0312-LAW-001</strong><br>법무팀 검토 중입니다. 완료 시 알림드릴게요.`) +
+    buildProcessCard('legal', 1)
+  )]);
+  setTimeout(() => {
+    addMsgs([botMsg(nb(`🔔 <strong>전자결재 상태 알림</strong><br>"법무기타결재 — 카카오 AI 협력 계약"<br>📋 팀장 승인 완료 → ⚖️ <strong>법무팀 검토 중</strong>`))]);
+  }, 2500);
+  setTimeout(() => {
+    updateStatusPanel('legal', 2);
+    // Init workflow state (replaces buildWorkflowCard embedded render)
+    initFormState(WF_DEFS.legal);
+    FORM_STATES['legal_wf'].docno.value = 'DOC-2026-0312-LAW-001';
+    FORM_STATES['legal_wf'].doc.value = '카카오 주식회사 AI 협력 계약서';
+    FORM_STATES['legal_wf'].requester.value = 'AI팀 헤이';
+    formActive = true;
+    currentScenario = 'legal_wf';
+    // Steps 1-2 done, step 3 active
+    addMsgs([botMsg(
+      sb(`✅ <strong>법무팀 검토 완료!</strong> 이제 인감날인 신청이 가능합니다.`) +
+      buildProcessCard('legal', 2)
+    )]);
+    appendFloatingFormCard('legal_wf');
+    setTimeout(() => askNextMissingField('legal_wf'), 800);
+  }, 5000);
+}
+
+function buildWorkflowCard(type) {
+  initFormState(WF_DEFS[type]);
+  if (type === 'legal') {
+    FORM_STATES['legal_wf'].docno.value = 'DOC-2026-0312-LAW-001';
+    FORM_STATES['legal_wf'].doc.value = '카카오 주식회사 AI 협력 계약서';
+    FORM_STATES['legal_wf'].requester.value = 'AI팀 헤이';
+  } else {
+    FORM_STATES['finance_wf'].docno.value = 'DOC-2026-0312-FIN-001';
+    FORM_STATES['finance_wf'].dept.value = 'AI팀';
+    FORM_STATES['finance_wf'].purpose.value = FORM_STATES['finance']?.purpose?.value || '';
+    FORM_STATES['finance_wf'].amount.value = FORM_STATES['finance']?.amount?.value || '550,000원';
+  }
+  return buildFormCard(WF_DEFS[type]);
+}
+
+function afterLegalWorkflow() {
+  updateStatusPanel('legal', 3);
+  // Steps 1-3 done, step 4 active
+  addMsgs([botMsg(
+    sb(`✅ <strong>인감날인 신청 완료!</strong> 담당자 처리 후 알림드릴게요.`) +
+    buildProcessCard('legal', 3)
+  )]);
+  setTimeout(() => {
+    updateStatusPanel('legal', 4);
+    // All 4 steps done
+    addMsgs([botMsg(
+      sb(`🎉 <strong>인감 날인이 완료되었습니다!</strong><br>계약서 날인이 모두 완료되었어요.<br>법무팀 담당자가 계약서를 보관 처리했습니다.`) +
+      buildProcessCard('legal', 4),
+      `<div class="action-btns"><button class="abtn outline" onclick="loadScenario('finance')">💰 자금 집행 신청하기 →</button></div>`
+    )]);
+  }, 3000);
+}
+
+// ===== SCENARIO: FINANCE =====
+function loadFinance() {
+  scenarioVersion++;
+  const sv = scenarioVersion;
+  currentScenario = 'finance';
+  formActive = false;
+  scenarioStep = 0;
+  currentQuestion = null;
+  setHintDefault();
+  initFormState(FORM_DEFS.finance);
+  updateStatusPanel('finance', 0);
+  updateInfoPanel('finance');
+
+  const chat = document.getElementById('chatMessages');
+  chat.innerHTML = `<div style="text-align:center;font-size:11.5px;color:var(--gray);padding:8px 0 14px;font-style:italic">📌 시나리오: 자금 집행 신청 — 시작</div>`;
+
+  addMsgs([userMsg('외부 교육업체에서 AI 기술 교육 받으려고 하는데, 비용 집행은 어떻게 신청해요?')]);
+
+  // Message 1 (800ms): Process overview only
+  setTimeout(() => {
+    if (scenarioVersion !== sv) return;
+    addMsgs([botMsg(
+      bb(`<strong>자금 집행 프로세스 안내드립니다! 💰</strong><br><br>
+      <strong>외부 교육비 집행</strong>은 아래 순서로 진행됩니다.`) +
+      buildProcessCard('finance', 0) +
+      `<div style="margin-top:8px;font-size:12.5px">💡 <strong>영수증 처리 안내</strong>: 교육 완료 후 세금계산서 또는 영수증을 회계팀에 제출하세요.<br>
+      <div class="src">📚 참고: [자금팀 집행가이드] [회계팀 영수증 처리안내]</div></div>`
+    )]);
+  }, 800);
+
+  // Message 2 (2500ms): GPT-like suggestion + button
+  setTimeout(() => {
+    if (scenarioVersion !== sv) return;
+    addMsgs([botMsg(
+      bb(`1번인 <strong>지출결의서 기안(전자결재)</strong>부터 시작해볼까요?<br>
+      신청 부서(AI팀)는 자동으로 채워드릴 수 있어요!`),
+      `<div class="action-btns">
+        <button class="abtn primary" onclick="showFinanceForm()">📋 지출결의서 자동 기입하기</button>
+        <button class="abtn ghost" onclick="askFinanceDetail()">❓ 추가 문의</button>
+      </div>
+      <div class="quick-replies" style="margin-top:7px">
+        <button class="qr" onclick="triggerYes('finance')">응, 해줘!</button>
+        <button class="qr" onclick="handleQR('예산이 없는 경우엔요?')">예산이 없는 경우엔요?</button>
+        <button class="qr" onclick="handleQR('법인카드로 이미 결제했는데요?')">법인카드로 이미 결제했는데요?</button>
+      </div>`
+    )]);
+  }, 2500);
+}
+
+function showFinanceForm() {
+  if (formActive) return;
+  formActive = true;
+  const def = FORM_DEFS.finance;
+  const s = FORM_STATES.finance;
+
+  const knownParts = [];
+  if (s.dept && s.dept.value) knownParts.push(`신청 부서 <strong>${s.dept.value}</strong>`);
+  const knownText = knownParts.length > 0 ? `${knownParts.join(', ')}은 자동으로 채웠어요.<br>` : '';
+
+  addMsgs([botMsg(
+    bb(`네, 시작할게요! ${knownText}나머지 항목을 차례로 여쭤볼게요 😊`)
+  )]);
+  appendFloatingFormCard('finance');
+  setTimeout(() => askNextMissingField('finance'), 800);
+}
+
+function afterFinanceApproval() {
+  updateStatusPanel('finance', 1);
+  // Step 1 done, step 2 active
+  addMsgs([botMsg(
+    sb(`✅ <strong>지출결의서 기안 접수!</strong><br>기안 번호: <strong>DOC-2026-0312-FIN-001</strong><br>팀장 승인 대기 중. 완료 시 알림드릴게요.`) +
+    buildProcessCard('finance', 1)
+  )]);
+  setTimeout(() => {
+    addMsgs([botMsg(nb(`🔔 <strong>전자결재 상태 알림</strong><br>"지출결의서 — 외부 AI 기술 교육비"<br>✅ <strong>팀장 승인 완료!</strong> 이제 자금팀 집행 신청이 가능합니다.`))]);
+  }, 2000);
+  setTimeout(() => {
+    updateStatusPanel('finance', 2);
+    // Init workflow state (replaces buildWorkflowCard embedded render)
+    initFormState(WF_DEFS.finance);
+    FORM_STATES['finance_wf'].docno.value = 'DOC-2026-0312-FIN-001';
+    FORM_STATES['finance_wf'].dept.value = 'AI팀';
+    FORM_STATES['finance_wf'].purpose.value = FORM_STATES['finance']?.purpose?.value || '';
+    FORM_STATES['finance_wf'].amount.value = FORM_STATES['finance']?.amount?.value || '550,000원';
+    formActive = true;
+    currentScenario = 'finance_wf';
+    // Steps 1-2 done, step 3 active
+    addMsgs([botMsg(
+      sb(`✅ <strong>팀장 승인 완료!</strong> 아래 워크플로를 통해 자금 집행을 신청해주세요.`) +
+      buildProcessCard('finance', 2)
+    )]);
+    appendFloatingFormCard('finance_wf');
+    setTimeout(() => askNextMissingField('finance_wf'), 800);
+  }, 4000);
+}
+
+function afterFinanceWorkflow() {
+  updateStatusPanel('finance', 3);
+  // Steps 1-3 done, step 4 active
+  addMsgs([botMsg(
+    sb(`✅ <strong>자금 집행 신청 완료!</strong> 자금팀 처리 후 알림드릴게요.`) +
+    buildProcessCard('finance', 3)
+  )]);
+  setTimeout(() => {
+    updateStatusPanel('finance', 4);
+    // All 4 done
+    addMsgs([botMsg(
+      sb(`🎉 <strong>자금 집행이 완료되었습니다!</strong><br>지정 계좌로 지급 처리되었어요.<br><br>💡 <strong>다음 단계:</strong> 교육 완료 후 세금계산서를 회계팀에 제출해주세요.`) +
+      buildProcessCard('finance', 4)
+    )]);
+  }, 3000);
+}
+
+// ===== MISC HANDLERS =====
+function askLegalDetail() {
+  addMsgs([userMsg('예외 케이스 — 카카오 자회사인 카카오모빌리티와 계약하면요?')]);
+  setTimeout(() => addMsgs([botMsg(bb(`카카오모빌리티는 별도 법인이므로 동일한 프로세스로 진행됩니다.<br><br>
+    <strong>주의할 점:</strong><br>
+    • 계약 상대방에 <strong>"카카오모빌리티 주식회사"</strong> 정확히 기재<br>
+    • 카카오 그룹사 계약은 법무팀 사전 협의 권장<br>
+    • 계약 금액 5억 이상 시 CFO 추가 승인 필요<br><br>
+    더 구체적인 케이스는 법무팀 담당자에게 확인하는 것을 권장드려요.`),
+    `<div class="action-btns"><button class="abtn primary" onclick="showLegalForm()">📋 전자결재 이어서 기입하기</button></div>`
+  )]), 1000);
+}
+
+function askFinanceDetail() {
+  addMsgs([userMsg('법인카드로 이미 결제한 경우엔요?')]);
+  setTimeout(() => addMsgs([botMsg(bb(`법인카드 사후 결제 처리 방법:<br><br>
+    <div class="step-list">
+      <div class="step-row"><div class="step-num s-active">1</div><div><div class="step-t">법인카드 사용 내역 확인</div><div class="step-d">#법인카드내역 채널에서 본인 내역 확인</div></div></div>
+      <div class="step-row"><div class="step-num s-pending">2</div><div><div class="step-t">지출결의서 기안 (전자결재)</div><div class="step-d">사용일로부터 7일 이내 제출 필수</div></div></div>
+      <div class="step-row"><div class="step-num s-pending">3</div><div><div class="step-t">영수증 회계팀 제출</div><div class="step-d">⚠️ 7일 초과 시 패널티 가능</div></div></div>
+    </div>`),
+    `<div class="action-btns"><button class="abtn primary" onclick="showFinanceForm()">📋 지출결의서 자동 기입하기</button></div>`
+  )]), 1000);
+}
+
+function handleQR(text) {
+  addMsgs([userMsg(text)]);
+  setTimeout(() => {
+    let reply = '';
+    if (text.includes('자회사')) {
+      reply = bb(`카카오 자회사의 경우에도 동일한 법무기타결재 프로세스를 따릅니다.<br>계약 상대방 칸에 정확한 법인명을 기재해주세요. (예: 카카오페이 주식회사)`);
+    } else if (text.includes('NDA')) {
+      reply = bb(`NDA(비밀유지계약)도 동일하게 <strong>법무기타결재</strong>로 기안하시면 됩니다.<br>• 기안 제목에 "NDA" 명시<br>• 요청사항에 "비밀유지계약 검토 및 날인 요청" 기재<br>• 유효기간 통상 3년 (협의 가능)`);
+    } else if (text.includes('예산이 없는')) {
+      reply = bb(`예산이 없는 경우:<br>1. <strong>예산변경신청서</strong> 기안 (팀장 → 재무팀장 승인)<br>2. 예산 배정 후 일반 집행 프로세스 진행<br>긴급 집행은 재무팀장과 사전 협의 후 가능합니다.`);
+    } else if (text.includes('법인카드')) {
+      reply = bb(`법인카드 사후 결제는 사용일로부터 <strong>7일 이내</strong> 지출결의서를 기안하셔야 합니다. 회계팀에 영수증도 함께 제출해주세요.`);
+    } else {
+      reply = bb(`말씀하신 내용을 파악했어요. 더 구체적인 안내가 필요하면 질문해주세요!`);
+    }
+    addMsgs([botMsg(reply)]);
+  }, 800);
+}
+
+// ===== 대명사/지시어 해석 (서버 없이 클라이언트 단에서 처리) =====
+// "그렇게 해줘", "그대로 입력해줘", "그걸로 해줘" → lastBotSuggestion 값으로 해석
+function resolveDeicticRef(text) {
+  if (!lastBotSuggestion) return null;
+  const t = text.trim();
+  // 지시 대명사 패턴: 그렇게/이렇게/그대로/그것/그걸 + 동작 (해줘/적어줘/입력해줘/써줘/넣어줘)
+  if (/^(그렇게|이렇게|그대로|그것으로|그걸로|그걸|그것|그리해|그리 해|그 값으로|그 내용으로)/.test(t) ||
+      /^(그러면\s*)?(그렇게|이렇게|그대로|그걸로)\s*(해줘|적어줘|입력해줘|써줘|넣어줘|기입해줘|할게|적을게|쓸게)/.test(t) ||
+      /^그러면\s*(그렇게|그대로|이렇게|그걸로)\s/.test(t) ||
+      /^그럼\s*(그렇게|그대로|이렇게|그걸로)/.test(t)) {
+    return lastBotSuggestion;
+  }
+  return null;
+}
+
+// ===== SEND MESSAGE =====
+function sendMsg() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+
+  // IME artifact guard
+  if (/^[\uAC00-\uD7A3\u3131-\u318E]$/.test(text)) return;
+
+  addMsgs([userMsg(text)]);
+  trackUser(text);
+
+  // ── 1. Form trigger (폼 시작 전) ──
+  if (!formActive && currentScenario && !currentScenario.endsWith('_wf')) {
+    const isAffirmative = /^(응|어|ㅇ{1,3}|네|예|그래|좋아|해줘|부탁해|알겠어|오케이|ok|ㅇㅋ|응응|ㄱㄱ|고고|넵|yes)/i.test(text.trim());
+    const isFormTrigger = /자동.?기입|기입.?해|기입.?하기|자동으로|양식.?작성|양식.?채워|폼.?채워|채워.?줘|작성.?해|작성.?하기|시작.?해|진행.?해|기안.?써|기안.?작성|전자결재.?해|전자결재.?작성|전자결재.?기입/.test(text);
+    if (isAffirmative || isFormTrigger) {
+      setTimeout(() => {
+        if (currentScenario === 'legal') showLegalForm();
+        else if (currentScenario === 'finance') showFinanceForm();
+      }, 300);
+      return;
+    }
+  }
+
+  // ── 2. Submit phrase ──
+  if (formActive && /제출|올리기|기안.?올려|보내기|올려줘|제출해|워크플로.?제출|워크플로.?올려/.test(text)) {
+    const type = getActiveFormType();
+    if (type) {
+      const {filled, total} = countRequired(type);
+      setTimeout(() => {
+        if (filled === total) { onFormSubmit(type); }
+        else {
+          addMsgs([botMsg(nb(`⚠️ 아직 필수 항목 ${total - filled}개가 비어있어요. 모두 채운 후 제출해주세요!`))]);
+          askNextMissingField(type);
+        }
+      }, 300);
+      return;
+    }
+  }
+
+  // ── 3. 지시어 대명사 해석: "그렇게 적어줘" = lastBotSuggestion으로 입력 ──
+  if (formActive && currentQuestion) {
+    const deicticValue = resolveDeicticRef(text);
+    if (deicticValue) {
+      const { type, fieldId, label } = currentQuestion;
+      FORM_STATES[type][fieldId].value = deicticValue;
+      FORM_STATES[type][fieldId].auto = false;
+      currentQuestion = null;
+      lastBotSuggestion = null;
+      updateFormCard(type);
+      setTimeout(() => {
+        const {filled, total} = countRequired(type);
+        const confirmMsg = `✅ <strong>${label}</strong>에 "<em>${deicticValue}</em>"를 입력했어요! 😊`;
+        trackBot(confirmMsg);
+        if (filled === total) {
+          setHintDefault();
+          addMsgs([botMsg(cb(confirmMsg))]);
+          appendFloatingFormCard(type);
+        } else {
+          addMsgs([botMsg(cb(confirmMsg))]);
+          appendFloatingFormCard(type);
+          setTimeout(() => askNextMissingField(type), 800);
+        }
+      }, 300);
+      return;
+    }
+  }
+
+  // ── 4. 메타질문: "X이라고 써도 되나?" ──
+  if (formActive && currentQuestion && isMetaQuestion(text)) {
+    const result = handleFieldQuestion(text, currentQuestion);
+    if (result) {
+      setTimeout(() => {
+        addMsgs([botMsg(result.html, result.extras)]);
+        appendFloatingFormCard(currentQuestion.type);
+      }, 600);
+      return;
+    }
+  }
+
+  // ── 5. 필드 직접 답변 ──
+  const handled = handleChatAnswer(text);
+  if (handled) return;
+
+  // ── 6. 자유형 필드 추출 (메타질문 제외) ──
+  if (formActive && !isMetaQuestion(text)) {
+    const extracted = tryFreeFormExtract(text);
+    if (extracted) return;
+  }
+
+  // ── 7. 맥락 Q&A ──
+  const ctxReply = handleContextualQuestion(text, currentScenario);
+  if (ctxReply) {
+    setTimeout(() => {
+      addMsgs([botMsg(ctxReply)]);
+      trackBot(ctxReply);
+      if (formActive) {
+        const type = getActiveFormType();
+        if (type) appendFloatingFormCard(type);
+      } else if (currentScenario) {
+        setTimeout(() => {
+          const nudge = currentScenario === 'legal'
+            ? `다시 본론으로 돌아와서 — <strong>전자결재 기입</strong>을 시작할까요?`
+            : `다시 본론으로 돌아와서 — <strong>지출결의서 기입</strong>을 시작할까요?`;
+          addMsgs([botMsg(bb(nudge),
+            `<div class="quick-replies" style="margin-top:6px">
+              <button class="qr" onclick="triggerYes('${currentScenario}')">응, 시작해줘!</button>
+            </div>`)]);
+        }, 800);
+      }
+    }, 600);
+    return;
+  }
+
+  // ── 8. 일반 fallback ──
+  setTimeout(() => {
+    let reply = '';
+    if (currentScenario === 'legal' && !formActive) {
+      reply = bb(`지금 <strong>계약서 날인 프로세스</strong>를 진행 중이에요.<br>전자결재 기입을 시작하려면 "응" 또는 "자동 기입해줘"라고 말씀해주세요!`,
+        `<div class="quick-replies" style="margin-top:6px"><button class="qr" onclick="triggerYes('legal')">자동 기입 시작</button></div>`);
+    } else if (currentScenario === 'finance' && !formActive) {
+      reply = bb(`지금 <strong>자금 집행 신청 프로세스</strong>를 진행 중이에요.<br>지출결의서 기입을 시작하려면 "응" 또는 "자동 기입해줘"라고 말씀해주세요!`,
+        `<div class="quick-replies" style="margin-top:6px"><button class="qr" onclick="triggerYes('finance')">자동 기입 시작</button></div>`);
+    } else if (/날인|계약|법무/.test(text)) {
+      reply = bb(`계약서 날인 관련 문의시네요! 상단 <strong>⚖️ 법무 탭</strong>에서 시나리오를 시작할 수 있어요.`);
+    } else if (/자금|집행|교육비/.test(text)) {
+      reply = bb(`자금 집행 관련 문의시네요! <strong>💰 자금 탭</strong>에서 시나리오를 시작해보세요.`);
+    } else if (/연차|휴가|인사/.test(text)) {
+      reply = bb(`연차 신청은 전자결재 시스템에서 <strong>연차신청서</strong>로 기안하시면 됩니다. 팀장 전결로 처리돼요.`);
+    } else {
+      reply = bb(`말씀하신 내용을 더 잘 이해하려면 조금 더 구체적으로 말씀해주세요 😊<br>법무, 자금, 연차 등 업무 관련 질문이라면 도와드릴 수 있어요!`);
+    }
+    addMsgs([botMsg(reply)]);
+    trackBot(reply);
+  }, 700);
+}
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+}
+
+// ===== STATUS PANEL =====
+const SCENARIO_STEPS = {
+  legal: ['AI 어시스턴트 문의','전자결재 기안','법무팀 검토','인감날인 신청','날인 완료'],
+  finance: ['AI 어시스턴트 문의','지출결의서 기안','팀장 승인','자금팀 집행 신청','집행 완료'],
+};
+function updateStatusPanel(name, done) {
+  scenarioStep = done;
+  const steps = SCENARIO_STEPS[name] || [];
+  const el = document.getElementById('statusItems');
+  el.innerHTML = steps.map((s,i) => {
+    const cls = i < done ? 'done' : i === done ? 'active' : 'pending';
+    const sub = i < done ? '완료' : i === done ? '진행 중' : '대기';
+    return `<div class="status-row"><div class="sdot ${cls}"></div><div class="st"><div class="st-title">${s}</div><div class="st-sub">${sub}</div></div></div>`;
+  }).join('');
+  const pct = steps.length ? Math.round(done/steps.length*100) : 0;
+  document.getElementById('progFill').style.width = pct + '%';
+  document.getElementById('progText').textContent = `${done} / ${steps.length} 완료`;
+}
+const SCENARIO_INFO = {
+  legal: {'업무 유형':'법무 — 계약서 날인','계약 상대방':'카카오 주식회사','요청 팀':'AI팀','담당 전결':'팀장 → 법무팀장'},
+  finance: {'업무 유형':'자금 — 예산 집행','집행 목적':'외부 AI 기술 교육','요청 팀':'AI팀','담당 전결':'팀장 → 자금팀'},
+};
+function updateInfoPanel(name) {
+  const info = SCENARIO_INFO[name] || {};
+  document.getElementById('infoPanel').innerHTML = `<h4>업무 정보</h4>` +
+    Object.entries(info).map(([k,v]) =>
+      `<div class="info-row"><span class="lbl">${k}</span><span class="val">${v}</span></div>`
+    ).join('');
+}
+
+// ===== LOAD SCENARIO =====
+function loadScenario(name) {
+  document.querySelectorAll('.scenario-tab').forEach(t => t.classList.remove('active'));
+  const tabs = document.querySelectorAll('.scenario-tab');
+  if (name === 'legal' && tabs[0]) tabs[0].classList.add('active');
+  if (name === 'finance' && tabs[1]) tabs[1].classList.add('active');
+  if (name === 'legal') loadLegal();
+  else if (name === 'finance') loadFinance();
+}
+
+function resetChat() {
+  scenarioVersion++; // cancel any pending scenario timeouts
+  currentScenario = null; currentQuestion = null; formActive = false; scenarioStep = 0;
+  setHintDefault();
+  document.querySelectorAll('.scenario-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('chatMessages').innerHTML = `
+    <div class="msg-group"><div class="msg-av bot">🤖</div>
+    <div class="msg-col"><div class="msg-meta">내부AI봇</div>
+    <div class="bubble bot">안녕하세요! <strong>내부 AI 업무 어시스턴트</strong>입니다 😊<br><br>
+    법무, 자금, 회계, 인사 등 어떤 업무든 도와드릴게요.<br>
+    궁금한 점을 자유롭게 물어보시거나, 위 탭에서 시나리오를 선택해보세요!
+    <div class="quick-replies" style="margin-top:9px">
+      <button class="qr" onclick="loadScenario('legal')">⚖️ 계약서 날인</button>
+      <button class="qr" onclick="loadScenario('finance')">💰 예산 집행</button>
+      <button class="qr" onclick="handleQR('연차 신청 방법')">🗓️ 연차 신청</button>
+      <button class="qr" onclick="handleQR('비품 구매 신청')">📦 비품 구매</button>
+    </div></div></div></div>`;
+  document.getElementById('statusItems').innerHTML = '<div class="status-row"><div class="sdot pending"></div><div class="st"><div class="st-title">시나리오를 선택하세요</div></div></div>';
+  document.getElementById('progFill').style.width = '0%';
+  document.getElementById('progText').textContent = '0 / 0 완료';
+  document.getElementById('infoPanel').innerHTML = '<h4>업무 정보</h4><div style="font-size:12px;color:var(--gray)">진행 시 자동으로 채워집니다</div>';
+}
+
+// Init
+resetChat();
+
+// 배지 숨김 (서버 없이 완전히 동작하므로 불필요)
+document.getElementById('aiStatusBadge').style.display = 'none';
+</script>
+</body>
+</html>
